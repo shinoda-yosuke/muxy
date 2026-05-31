@@ -142,10 +142,11 @@ struct MainWindow: View {
                                 .lineLimit(2)
                         }
                     }
+                    .frame(maxWidth: UIMetrics.scaled(360), alignment: .leading)
                 }
                 .padding(.horizontal, UIMetrics.scaled(14))
                 .padding(.vertical, UIMetrics.spacing4)
-                .frame(maxWidth: UIMetrics.scaled(360), alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
                 .background(MuxyTheme.bg, in: Capsule())
                 .overlay(Capsule().stroke(MuxyTheme.border, lineWidth: 1))
                 .contentShape(Capsule())
