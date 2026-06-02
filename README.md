@@ -36,7 +36,6 @@ Lightweight terminal that has a rich API for extensions
 - Text editor with syntax highlighting
 - Markdown & HTML preview (with Mermaid diagrams)
 - Image viewer
-- AI usage tracking (Most of the providers are supported)
 - Extensions
 - IDE integration
 - Mobile companion apps (iOS & Android)
