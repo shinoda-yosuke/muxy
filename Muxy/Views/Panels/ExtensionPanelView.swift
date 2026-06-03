@@ -14,7 +14,7 @@ struct ExtensionPanelView: View {
            let entryURL = ExtensionWebView.entryURL(for: muxyExtension, entry: panel.entry)
         {
             PanelContainer(
-                chrome: chrome(for: panel),
+                chrome: chrome(for: panel, in: muxyExtension),
                 mode: placement.mode,
                 position: placement.position,
                 onClose: { ExtensionPanelRegistry.shared.close(hostPanelID: state.hostPanelID) },
@@ -36,12 +36,36 @@ struct ExtensionPanelView: View {
         }
     }
 
-    private func chrome(for panel: ExtensionPanel) -> PanelChrome {
+    private func chrome(for panel: ExtensionPanel, in muxyExtension: MuxyExtension) -> PanelChrome {
         PanelChrome(
             iconSymbol: panel.icon.flatMap(symbol(from:)),
             title: panel.title,
             hiddenControls: Set(panel.hiddenControls),
+            trailingButtons: headerButtons(for: panel, in: muxyExtension),
             hidesHeader: panel.hideTopbar
+        )
+    }
+
+    private func headerButtons(for panel: ExtensionPanel, in muxyExtension: MuxyExtension) -> [PanelHeaderButton] {
+        panel.headerButtons.map { button in
+            PanelHeaderButton(
+                id: button.id,
+                icon: .extensionIcon(button.icon, muxyExtension),
+                label: button.tooltip ?? button.id,
+                action: { trigger(command: button.command) }
+            )
+        }
+    }
+
+    private func trigger(command commandID: String) {
+        ExtensionStore.shared.triggerCommand(
+            ExtensionStore.CommandInvocation(
+                extensionID: state.extensionID,
+                commandID: commandID,
+                appState: appState,
+                projectStore: projectStore,
+                worktreeStore: worktreeStore
+            )
         )
     }
 
