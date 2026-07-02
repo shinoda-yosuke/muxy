@@ -43,8 +43,12 @@ final class WindowDragView: NSView {
             switch action {
             case "Minimize":
                 window?.miniaturize(nil)
+            case "None":
+                break
             default:
-                window?.zoom(nil)
+                if let window {
+                    MainWindowMaximizer.shared.toggleMaximize(window)
+                }
             }
             return
         }
