@@ -1,7 +1,8 @@
 import AppKit
 
 enum MainWindowMaximizeGeometry {
-    static func maximizedFrame(screenFrame: NSRect, visibleFrame: NSRect) -> NSRect {
+    static func maximizedFrame(screenFrame: NSRect, visibleFrame: NSRect, dockAutoHidden: Bool) -> NSRect {
+        guard dockAutoHidden else { return visibleFrame }
         let menuBarInset = max(0, screenFrame.maxY - visibleFrame.maxY)
         return NSRect(
             x: screenFrame.minX,
@@ -17,6 +18,15 @@ enum MainWindowMaximizeGeometry {
             && abs(windowFrame.width - maximizedFrame.width) < tolerance
             && abs(windowFrame.height - maximizedFrame.height) < tolerance
     }
+
+    static func clamped(_ frame: NSRect, within visibleFrame: NSRect) -> NSRect {
+        var result = frame
+        result.size.width = min(result.width, visibleFrame.width)
+        result.size.height = min(result.height, visibleFrame.height)
+        result.origin.x = min(max(result.minX, visibleFrame.minX), visibleFrame.maxX - result.width)
+        result.origin.y = min(max(result.minY, visibleFrame.minY), visibleFrame.maxY - result.height)
+        return result
+    }
 }
 
 @MainActor
@@ -25,8 +35,6 @@ final class MainWindowMaximizer {
 
     private weak var maximizedWindow: NSWindow?
     private var restoreFrame: NSRect?
-    private var screenParametersObserver: NSObjectProtocol?
-    private var liveResizeObserver: NSObjectProtocol?
 
     private init() {}
 
@@ -38,76 +46,56 @@ final class MainWindowMaximizer {
         maximize(window)
     }
 
+    func reassertMaximizedFrame() {
+        guard let window = maximizedWindow,
+              !window.styleMask.contains(.fullScreen),
+              window.screen != nil,
+              let frame = maximizedFrame(for: window),
+              !MainWindowMaximizeGeometry.isMaximized(windowFrame: window.frame, maximizedFrame: frame)
+        else { return }
+        window.setFrame(frame, display: true)
+    }
+
+    func handleUserResize() {
+        guard let window = maximizedWindow else { return }
+        if let frame = maximizedFrame(for: window),
+           MainWindowMaximizeGeometry.isMaximized(windowFrame: window.frame, maximizedFrame: frame)
+        {
+            return
+        }
+        maximizedWindow = nil
+        restoreFrame = nil
+    }
+
     private func maximize(_ window: NSWindow) {
         guard let frame = maximizedFrame(for: window) else { return }
         restoreFrame = window.frame
         maximizedWindow = window
-        startObserving(window)
         window.setFrame(frame, display: true)
     }
 
     private func restore(_ window: NSWindow) {
-        stopObserving()
         maximizedWindow = nil
         guard let frame = restoreFrame else { return }
         restoreFrame = nil
-        window.setFrame(frame, display: true)
+        window.setFrame(clampedRestoreFrame(frame, for: window), display: true)
     }
 
     private func maximizedFrame(for window: NSWindow) -> NSRect? {
         guard let screen = window.screen ?? NSScreen.main else { return nil }
         return MainWindowMaximizeGeometry.maximizedFrame(
             screenFrame: screen.frame,
-            visibleFrame: screen.visibleFrame
+            visibleFrame: screen.visibleFrame,
+            dockAutoHidden: Self.isDockAutoHidden()
         )
     }
 
-    private func startObserving(_ window: NSWindow) {
-        stopObserving()
-        screenParametersObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self?.reassertMaximizedFrame()
-                }
-            }
-        }
-        liveResizeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didEndLiveResizeNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.releaseIfUserResized()
-            }
-        }
+    private func clampedRestoreFrame(_ frame: NSRect, for window: NSWindow) -> NSRect {
+        guard let screen = window.screen ?? NSScreen.main else { return frame }
+        return MainWindowMaximizeGeometry.clamped(frame, within: screen.visibleFrame)
     }
 
-    private func stopObserving() {
-        if let screenParametersObserver {
-            NotificationCenter.default.removeObserver(screenParametersObserver)
-            self.screenParametersObserver = nil
-        }
-        if let liveResizeObserver {
-            NotificationCenter.default.removeObserver(liveResizeObserver)
-            self.liveResizeObserver = nil
-        }
-    }
-
-    private func reassertMaximizedFrame() {
-        guard let window = maximizedWindow, let frame = maximizedFrame(for: window) else { return }
-        guard !MainWindowMaximizeGeometry.isMaximized(windowFrame: window.frame, maximizedFrame: frame) else { return }
-        window.setFrame(frame, display: true)
-    }
-
-    private func releaseIfUserResized() {
-        guard let window = maximizedWindow, let frame = maximizedFrame(for: window) else { return }
-        guard !MainWindowMaximizeGeometry.isMaximized(windowFrame: window.frame, maximizedFrame: frame) else { return }
-        stopObserving()
-        maximizedWindow = nil
-        restoreFrame = nil
+    private static func isDockAutoHidden() -> Bool {
+        UserDefaults(suiteName: "com.apple.dock")?.bool(forKey: "autohide") ?? false
     }
 }

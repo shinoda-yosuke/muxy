@@ -820,6 +820,9 @@ struct WindowConfigurator: NSViewRepresentable {
                     MainActor.assumeIsolated {
                         WindowConfigurator.repositionTrafficLights(in: w)
                         WindowConfigurator.hideTitlebarDecorationView(in: w)
+                        if name == NSWindow.didEndLiveResizeNotification {
+                            MainWindowMaximizer.shared.handleUserResize()
+                        }
                         if name == NSWindow.didChangeScreenNotification
                             || name == NSWindow.didChangeBackingPropertiesNotification
                         {
@@ -840,6 +843,19 @@ struct WindowConfigurator: NSViewRepresentable {
                 }
                 observations.append(token)
             }
+
+            let screenParametersToken = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        MainWindowMaximizer.shared.reassertMaximizedFrame()
+                    }
+                }
+            }
+            observations.append(screenParametersToken)
 
             observeButtonFrames(window: window)
         }

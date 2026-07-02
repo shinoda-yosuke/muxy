@@ -5,40 +5,46 @@ import Testing
 
 @Suite("MainWindowMaximizeGeometry")
 struct MainWindowMaximizeGeometryTests {
-    @Test("reclaims a bottom Dock while preserving the menu bar")
-    func reclaimsBottomDock() {
+    @Test("ignores an auto-hidden bottom Dock while preserving the menu bar")
+    func autoHiddenBottomDock() {
         let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
         let visible = NSRect(x: 0, y: 70, width: 1920, height: 1080 - 24 - 70)
 
-        let frame = MainWindowMaximizeGeometry.maximizedFrame(screenFrame: screen, visibleFrame: visible)
+        let frame = MainWindowMaximizeGeometry.maximizedFrame(
+            screenFrame: screen,
+            visibleFrame: visible,
+            dockAutoHidden: true
+        )
 
-        #expect(frame.minX == 0)
-        #expect(frame.minY == 0)
-        #expect(frame.width == 1920)
-        #expect(frame.height == 1056)
+        #expect(frame == NSRect(x: 0, y: 0, width: 1920, height: 1056))
     }
 
-    @Test("keeps full height below the menu bar when no Dock is inset")
-    func menuBarOnly() {
-        let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let visible = NSRect(x: 0, y: 0, width: 1440, height: 876)
-
-        let frame = MainWindowMaximizeGeometry.maximizedFrame(screenFrame: screen, visibleFrame: visible)
-
-        #expect(frame.width == 1440)
-        #expect(frame.height == 876)
-    }
-
-    @Test("reclaims a side Dock by spanning the full width")
-    func reclaimsSideDock() {
+    @Test("ignores an auto-hidden side Dock by spanning the full width")
+    func autoHiddenSideDock() {
         let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
         let visible = NSRect(x: 80, y: 0, width: 1840, height: 1056)
 
-        let frame = MainWindowMaximizeGeometry.maximizedFrame(screenFrame: screen, visibleFrame: visible)
+        let frame = MainWindowMaximizeGeometry.maximizedFrame(
+            screenFrame: screen,
+            visibleFrame: visible,
+            dockAutoHidden: true
+        )
 
-        #expect(frame.minX == 0)
-        #expect(frame.width == 1920)
-        #expect(frame.height == 1056)
+        #expect(frame == NSRect(x: 0, y: 0, width: 1920, height: 1056))
+    }
+
+    @Test("respects a pinned Dock by using the visible frame")
+    func pinnedDockUsesVisibleFrame() {
+        let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let visible = NSRect(x: 0, y: 70, width: 1920, height: 986)
+
+        let frame = MainWindowMaximizeGeometry.maximizedFrame(
+            screenFrame: screen,
+            visibleFrame: visible,
+            dockAutoHidden: false
+        )
+
+        #expect(frame == visible)
     }
 
     @Test("preserves the origin of a secondary display")
@@ -46,12 +52,13 @@ struct MainWindowMaximizeGeometryTests {
         let screen = NSRect(x: 1920, y: 0, width: 1920, height: 1080)
         let visible = NSRect(x: 1920, y: 70, width: 1920, height: 986)
 
-        let frame = MainWindowMaximizeGeometry.maximizedFrame(screenFrame: screen, visibleFrame: visible)
+        let frame = MainWindowMaximizeGeometry.maximizedFrame(
+            screenFrame: screen,
+            visibleFrame: visible,
+            dockAutoHidden: true
+        )
 
-        #expect(frame.minX == 1920)
-        #expect(frame.minY == 0)
-        #expect(frame.width == 1920)
-        #expect(frame.height == 1056)
+        #expect(frame == NSRect(x: 1920, y: 0, width: 1920, height: 1056))
     }
 
     @Test("treats a frame within tolerance as maximized")
@@ -71,5 +78,46 @@ struct MainWindowMaximizeGeometryTests {
         let shrunk = NSRect(x: 0, y: 70, width: 1920, height: 986)
 
         #expect(!MainWindowMaximizeGeometry.isMaximized(windowFrame: shrunk, maximizedFrame: target))
+    }
+
+    @Test("clamps an off-screen restore frame back onto the current screen")
+    func clampsOffScreenRestoreFrame() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 876)
+        let external = NSRect(x: 1920, y: 100, width: 1000, height: 700)
+
+        let clamped = MainWindowMaximizeGeometry.clamped(external, within: visible)
+
+        #expect(clamped == NSRect(x: 440, y: 100, width: 1000, height: 700))
+    }
+
+    @Test("shrinks a restore frame larger than the current screen")
+    func clampsOversizedRestoreFrame() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 876)
+        let oversized = NSRect(x: 0, y: 0, width: 2000, height: 1200)
+
+        let clamped = MainWindowMaximizeGeometry.clamped(oversized, within: visible)
+
+        #expect(clamped == visible)
+    }
+
+    @Test("leaves an already-contained restore frame unchanged")
+    func clampKeepsContainedFrame() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 876)
+        let inside = NSRect(x: 100, y: 100, width: 800, height: 500)
+
+        #expect(MainWindowMaximizeGeometry.clamped(inside, within: visible) == inside)
+    }
+}
+
+@Suite("MainWindowMaximizer")
+@MainActor
+struct MainWindowMaximizerStateTests {
+    @Test("driving the state entry points on a screenless window does not crash")
+    func toggleWithoutScreenIsSafe() {
+        let window = NSWindow()
+
+        MainWindowMaximizer.shared.toggleMaximize(window)
+        MainWindowMaximizer.shared.reassertMaximizedFrame()
+        MainWindowMaximizer.shared.handleUserResize()
     }
 }
